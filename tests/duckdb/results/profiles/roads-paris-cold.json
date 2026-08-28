@@ -1,0 +1,110 @@
+{
+    "query_name": "COPY (\n  SELECT id, class, names.primary AS name, bbox, geometry\n  FROM read_parquet('https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2026-07-22.0/theme=transportation/type=segment/part-00052-d07740e1-5b82-5dbc-8c32-9c0a8b1902b0-c000.zstd.parquet')\n  WHERE bbox.xmin < 2.314\n    AND bbox.xmax > 2.276\n    AND bbox.ymin < 48.882\n    AND bbox.ymax > 48.865\n) TO 'results/roads-paris-cold.parquet' (FORMAT PARQUET, COMPRESSION ZSTD);",
+    "blocked_thread_time": 0.0,
+    "system_peak_buffer_memory": 34314232,
+    "system_peak_temp_dir_size": 0,
+    "cpu_time": 578.3907198,
+    "extra_info": {},
+    "cumulative_cardinality": 14716,
+    "cumulative_rows_scanned": 43805152,
+    "result_set_size": 8,
+    "latency": 349.0148224,
+    "rows_returned": 1,
+    "total_bytes_read": 13397627,
+    "total_bytes_written": 0,
+    "children": [
+        {
+            "cpu_time": 578.3907198,
+            "extra_info": {},
+            "cumulative_cardinality": 14716,
+            "operator_name": "BATCH_COPY_TO_FILE",
+            "operator_type": "BATCH_COPY_TO_FILE",
+            "operator_cardinality": 1,
+            "cumulative_rows_scanned": 43805152,
+            "operator_rows_scanned": 0,
+            "operator_timing": 0.0006644,
+            "result_set_size": 8,
+            "total_bytes_read": 0,
+            "total_bytes_written": 0,
+            "children": [
+                {
+                    "cpu_time": 578.3900554,
+                    "extra_info": {
+                        "Projections": [
+                            "id",
+                            "class",
+                            "name",
+                            "bbox",
+                            "geometry"
+                        ],
+                        "Estimated Cardinality": "547564"
+                    },
+                    "cumulative_cardinality": 14715,
+                    "operator_name": "PROJECTION",
+                    "operator_type": "PROJECTION",
+                    "operator_cardinality": 4905,
+                    "cumulative_rows_scanned": 43805152,
+                    "operator_rows_scanned": 0,
+                    "operator_timing": 0.0005158,
+                    "result_set_size": 470880,
+                    "total_bytes_read": 0,
+                    "total_bytes_written": 0,
+                    "children": [
+                        {
+                            "cpu_time": 578.3895396,
+                            "extra_info": {
+                                "Projections": [
+                                    "id",
+                                    "class",
+                                    "name",
+                                    "bbox",
+                                    "geometry"
+                                ],
+                                "Estimated Cardinality": "547564"
+                            },
+                            "cumulative_cardinality": 9810,
+                            "operator_name": "PROJECTION",
+                            "operator_type": "PROJECTION",
+                            "operator_cardinality": 4905,
+                            "cumulative_rows_scanned": 43805152,
+                            "operator_rows_scanned": 0,
+                            "operator_timing": 0.000028300000000000003,
+                            "result_set_size": 470880,
+                            "total_bytes_read": 0,
+                            "total_bytes_written": 0,
+                            "children": [
+                                {
+                                    "cpu_time": 578.3895113,
+                                    "extra_info": {
+                                        "Function": "READ_PARQUET",
+                                        "Projections": [
+                                            "bbox",
+                                            "id",
+                                            "class",
+                                            "names.primary",
+                                            "geometry"
+                                        ],
+                                        "Filters": "bbox.xmin<2.314 AND bbox.xmax>2.276 AND bbox.ymin<48.882 AND bbox.ymax>48.865",
+                                        "Estimated Cardinality": "547564",
+                                        "Total Files Read": "1"
+                                    },
+                                    "cumulative_cardinality": 4905,
+                                    "operator_name": "READ_PARQUET ",
+                                    "operator_type": "TABLE_SCAN",
+                                    "operator_cardinality": 4905,
+                                    "cumulative_rows_scanned": 43805152,
+                                    "operator_rows_scanned": 43805152,
+                                    "operator_timing": 578.3895113,
+                                    "result_set_size": 13014144,
+                                    "total_bytes_read": 0,
+                                    "total_bytes_written": 0,
+                                    "children": []
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

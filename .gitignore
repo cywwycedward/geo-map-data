@@ -1,0 +1,16 @@
+# Codex
+# Team-shared config and rules may be committed explicitly. Local skill and
+# agent installations remain ignored.
+**/.codex/skills/
+**/.codex/agents/
+
+# Claude
+# Team-shared settings and rules may be committed explicitly. Local skill
+# installations remain ignored.
+**/.claude/skills/
+
+# Developer-local AI settings may contain paths, credentials, or experiments.
+**/settings.local.json
+**/*.local.toml
+**/*.local.json
+**/*.local.yaml
