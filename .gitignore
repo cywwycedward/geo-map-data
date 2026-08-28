@@ -14,3 +14,8 @@
 **/*.local.toml
 **/*.local.json
 **/*.local.yaml
+
+# Environment files commonly contain local credentials and endpoints.
+**/.env
+**/.env.*
+!**/.env.example
