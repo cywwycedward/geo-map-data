@@ -16,7 +16,7 @@
 - 项目初始化时安装 `spatial` 与 `httpfs` DuckDB 扩展。Go 每次创建数据库连接时都明确执行 `LOAD spatial` 和 `LOAD httpfs`；Agent 的业务 SQL 不负责加载扩展。
 - `geodata-serve init --runtime-dir <path>` 将 DuckDB 扩展目录设为 `<runtime-dir>/extensions/`，并从 DuckDB 官方扩展仓库安装与固定 DuckDB 版本、当前平台匹配的 `spatial` 和 `httpfs` 扩展。扩展二进制不提交 Git；日常服务启动不安装或下载扩展。未来离线发布时，可将已校验的同版本扩展文件随安装包分发。
 - v1 使用 DuckDB 默认的内存上限、线程数和临时磁盘上限，不预先设定机器相关的固定数值。Go 将 DuckDB 临时文件目录设为 `<runtime-dir>/duckdb-tmp/`，避免临时文件散落到系统目录；DuckDB 当前默认最多使用可用磁盘空间的约 90%。
-- Go 数据程序直接依赖仅使用官方 `github.com/duckdb/duckdb-go/v2`，固定为 `v2.10505.0`（DuckDB `v1.5.5`），并使用 Go `1.24.0`。HTTP、CLI、JSON、日志、取消、并发与测试优先使用 Go 标准库；不在 v1 引入 Web、CLI、日志、配置、任务队列或容器测试框架。
+- Go 数据程序直接依赖仅使用官方 `github.com/duckdb/duckdb-go/v2`，固定为 `v2.5.6`（DuckDB `v1.4.5`），并使用 Go `1.26.5`。HTTP、CLI、JSON、日志、取消、并发与测试优先使用 Go 标准库；不在 v1 引入 Web、CLI、日志、配置、任务队列或容器测试框架。
 - Windows 构建环境须提供 DuckDB Go 驱动要求的 GCC/MSYS2 工具链。v1 不启用可选的 DuckDB Arrow 构建支持。
 - 调用方通过 `--database`、`--runtime-dir`、`--backup-dir` 和 `--working-dir` 明确提供数据库文件、服务运行目录、完整备份目录和 Agent SQL 相对路径的解析基准。`geodata-serve` 不推断项目目录，也不规定这些路径在项目中的位置。
 - Go 数据程序使用标准库 `net/http` 提供本地 HTTP 服务，仅监听 `127.0.0.1` 的随机端口，提供 `GET /health`、`POST /execute`、`GET /requests/{request_id}` 和 `POST /shutdown` 端点。运行状态（进程标识、服务地址、随机 token、数据库路径等）保存在 `<runtime-dir>/server.json`，不提交 Git；除健康检查外，子 Agent 使用 token 请求同一服务。

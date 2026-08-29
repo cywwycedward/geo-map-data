@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"name": "樱花大道"},
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[114.3608, 30.5347], [114.3621, 30.5352]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {"name": "珞珈山路"},
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[114.3634, 30.5338], [114.3646, 30.5345]]
+      }
+    }
+  ]
+}

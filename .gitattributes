@@ -1,0 +1,22 @@
+## Keep text stable across Windows and Linux. Git stores and checks out LF.
+* text=auto eol=lf
+
+## Windows command scripts require CRLF for cmd.exe compatibility.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+## Geodata and other binary artifacts must not undergo text conversion.
+*.db binary
+*.duckdb binary
+*.parquet binary
+*.gpkg binary
+*.shp binary
+*.shx binary
+*.dbf binary
+*.tif binary
+*.tiff binary
+*.zip binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary

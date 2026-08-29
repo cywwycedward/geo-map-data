@@ -2,7 +2,7 @@
 
 `geodata-serve` 是面向本地地理项目的 Go + DuckDB 数据服务。它让主 Agent 与子 Agent 通过同一个本地进程执行原始 DuckDB SQL，并统一处理连接、并发、写前备份、取消、状态和流式结果。
 
-当前目录只完成设计与开发规范初始化，尚未创建 Go module，也不包含实现代码。
+当前目录包含 geodata-serve v1 的 Go module、Runtime Module、HTTP adapter、启动准备和离线恢复实现。
 
 ## 文档
 

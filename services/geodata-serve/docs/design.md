@@ -1,6 +1,6 @@
 # geodata-serve 设计实现
 
-> 状态：v1 实现依据。本文描述已经确认的 Go + DuckDB 服务设计；尚未开始代码实现。
+> 状态：v1 实现依据。本文描述已经确认的 Go + DuckDB 服务设计及当前实现边界。
 
 ## 1. 文档地位
 
@@ -171,9 +171,9 @@ geodata-serve version
 
 ### 8.1 版本
 
-- Go：`1.24.0`；
-- 驱动：`github.com/duckdb/duckdb-go/v2 v2.10505.0`；
-- DuckDB：由驱动绑定的 `v1.5.5`；
+- Go：使用构建环境提供的固定版本（当前验收环境为 `1.26.5`）；
+- 驱动：`github.com/duckdb/duckdb-go/v2 v2.5.6`；
+- DuckDB：由驱动绑定的 `v1.4.5`；
 - v1 不启用 `duckdb_arrow` build tag。
 
 升级驱动时必须把 DuckDB、Spatial、httpfs 和 GDAL 驱动能力作为一组重新验收。

@@ -1,35 +1,37 @@
 # geodata-serve 开发规范
 
-> 当前状态：只有设计与规范，尚未建立 Go module。本文中的命令在 `go.mod` 创建后生效。
+> 当前状态：v1 实现与验证进行中；本文命令适用于当前 Go module。
 
 ## 1. 开发环境
 
 ### 必需版本
 
-- Go `1.24.0`；
+- 当前验收环境的 Go 版本（本环境为 `1.26.5`）；
 - Windows amd64；
 - MSYS2 UCRT64 GCC 与对应运行库；
 - Git 从仓库根目录管理。
 
 `duckdb-go` 使用 CGO，并默认链接预编译 DuckDB 静态库。Windows 开发机应将 MSYS2 UCRT64 的 `bin` 目录加入当前 shell 的 `PATH`，但不得把开发机绝对路径提交到仓库配置。
 
+当前 `duckdb-go-bindings v0.3.5` 的 Windows 预编译库要求 GCC 与其 C++ 运行库兼容。默认 PATH 应自动发现 UCRT64 GCC `15.2.0` 和匹配的运行库；无需设置 `CC`、`CXX` 或 `CGO_LDFLAGS`，即可通过服务测试、构建和启动验证。此前 GCC `16.2` 与 bindings 静态库的 `__emutls_v...` 链接失败仅保留为兼容性诊断证据。
+
 ### 唯一直接第三方依赖
 
 ```text
-github.com/duckdb/duckdb-go/v2 v2.10505.0
+github.com/duckdb/duckdb-go/v2 v2.5.6
 ```
 
-计划 `go.mod`：
+实际 `go.mod`：
 
 ```go
-module <仓库模块路径>/services/geodata-serve
+module services/geodata-serve
 
-go 1.24.0
+go 1.26.5
 
-require github.com/duckdb/duckdb-go/v2 v2.10505.0
+require github.com/duckdb/duckdb-go/v2 v2.5.6
 ```
 
-模块路径在创建 `go.mod` 时根据仓库最终模块命名确定；当前文档不猜测。提交 `go.mod` 和 `go.sum`，v1 不提交 `vendor/`，也不启用 `duckdb_arrow`。
+模块路径为 `services/geodata-serve`。提交 `go.mod` 和 `go.sum`，v1 不提交 `vendor/`，也不启用 `duckdb_arrow`。
 
 ## 2. 依赖规则
 
@@ -234,6 +236,8 @@ row_count, error_code, service_version, duckdb_version
 
 ## 10. 开发命令
 
+真实 Runtime/Spatial 集成测试使用已由 `init` 准备的本地扩展目录。运行完整集成覆盖前，在当前 shell 设置 `GEODATA_SERVE_EXTENSION_DIR` 为该 `extensions` 根目录；测试不会联网下载扩展。未设置时，仅依赖 Spatial/httpfs 的测试会明确 skip。
+
 Go module 建立后，常规检查为：
 
 ```powershell
@@ -247,6 +251,8 @@ Windows release smoke test 至少验证：
 ```powershell
 go build ./cmd/geodata-serve
 ```
+
+Windows smoke 应启动编译出的服务，执行真实 DuckDB 请求并经 `/shutdown` 关闭；测试日志必须包含实际查询到的 `spatial_version`，而不是使用 DuckDB 版本代填。当前默认 UCRT64 GCC 15.2 工具链已完成这项验证。
 
 不要在文档阶段创建假的脚本包装不存在的命令。需要重复的构建步骤真实出现后，再增加 PowerShell 或 Go 工具脚本。
 

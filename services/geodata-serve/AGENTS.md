@@ -4,14 +4,14 @@
 
 ## 当前阶段
 
-- 当前只完成设计和开发规范，尚无 Go module 或实现代码。
-- 开始实现前，先阅读 `README.md`、`docs/design.md`、`docs/http-interface.md`、`docs/development.md` 和仓库级 `docs/architecture/data-module-v1.md`。
-- 未创建 `go.mod` 前，不要声称存在可运行的 Go 构建、测试或 lint 命令。
+- 当前已进入 v1 实现阶段；实现、测试和文档必须保持与已接受设计一致。
+- 开始或继续实现前，先阅读 `README.md`、`docs/design.md`、`docs/http-interface.md`、`docs/development.md` 和仓库级 `docs/architecture/data-module-v1.md`。
+- `go.mod` 已存在，Go 验证命令必须以真实命令和实际输出为依据。
 - 不要在本目录运行 `git init`；仓库根目录 `.git/` 是唯一 Git 元数据目录。
 
 ## 固定设计
 
-- 使用 Go `1.24.0` 和固定版本的 `github.com/duckdb/duckdb-go/v2`；v1 不启用 Arrow build tag。
+- 使用 Go `1.26.5` 和固定版本的 `github.com/duckdb/duckdb-go/v2 v2.5.6`（DuckDB `1.4.5`）；v1 不启用 Arrow build tag。
 - 除 DuckDB 官方驱动外，HTTP、CLI、JSON、日志、并发、取消和测试优先使用 Go 标准库。引入新直接依赖前，必须写明标准库为何不足。
 - 外部 seam 是仅监听 `127.0.0.1` 的 HTTP interface。HTTP adapter 只负责鉴权、协议转换和流式编码，不直接访问 `*sql.DB`。
 - 数据运行 Module 负责 DuckDB 生命周期、2 读 + 1 写调度、写前备份、请求状态、取消和关闭。调用方与测试都从该 Module 的 interface 进入。
