@@ -9,6 +9,8 @@
 # installations remain ignored.
 **/.claude/skills/
 
+**/.pi/agent/skills/
+
 # Developer-local AI settings may contain paths, credentials, or experiments.
 **/settings.local.json
 **/*.local.toml
