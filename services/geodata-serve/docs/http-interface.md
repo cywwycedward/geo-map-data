@@ -38,6 +38,8 @@ Authorization: Bearer <token>
 
 缺少或错误 token 返回 `401 Unauthorized`。服务不得在响应或日志中回显 token。
 
+对于受保护路径，鉴权失败优先于 HTTP method 校验；只有携带有效 token 的错误 method 才返回 `405 Method Not Allowed`。
+
 ### 2.2 JSON
 
 - 普通请求和非流式响应使用 `application/json; charset=utf-8`；
@@ -87,7 +89,7 @@ Content-Type: application/json; charset=utf-8
   "status": "ok",
   "interface_version": 1,
   "service_version": "0.1.0",
-  "duckdb_version": "1.5.5",
+  "duckdb_version": "1.4.5",
   "pid": 18420
 }
 ```
@@ -261,7 +263,8 @@ schema 中的 `duckdb_type` 保留原始类型，row 值按以下规则编码：
 | `VARCHAR`、`ENUM`、`UUID` | string |
 | 日期、时间、timestamp、interval | DuckDB 的稳定文本表示 string |
 | `BLOB`、原始 `GEOMETRY` | `{"encoding":"base64","data":"..."}` |
-| `LIST`、`ARRAY`、`STRUCT`、`MAP`、`UNION`、`JSON` | 递归 JSON 值；不能无损表示时终止为 `result_encoding_failed` |
+| `LIST`、`ARRAY`、`STRUCT`、`UNION`、`JSON` | 递归 JSON 值；不能无损表示时终止为 `result_encoding_failed` |
+| `MAP` | 字符串 key 编码为 JSON object；其他 key 编码为按 key 文本稳定排序的 `[{"key": ..., "value": ...}]` 数组，保留 key 的 JSON 类型。 |
 
 服务不自动识别或转换几何。需要文本或 GeoJSON 时，调用方 SQL 使用：
 
