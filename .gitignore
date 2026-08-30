@@ -9,6 +9,8 @@
 # installations remain ignored.
 **/.claude/skills/
 
+**/.pi/skills/
+
 # Developer-local AI settings may contain paths, credentials, or experiments.
 **/settings.local.json
 **/*.local.toml
@@ -19,3 +21,11 @@
 **/.env
 **/.env.*
 !**/.env.example
+
+# Locally compiled service binaries and manual integration-test state are
+# reproducible. The runtime state includes the server discovery token.
+services/geodata-serve/*.exe
+tests/geodata-serve-test/
+/.local/
+/node_modules/
+/archive-*/

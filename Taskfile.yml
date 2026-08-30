@@ -1,0 +1,43 @@
+version: '3'
+
+output: prefixed
+
+tasks:
+  geodata:build:
+    desc: Build the local geodata-serve development binary.
+    cmds:
+      - node apps/geodata-serve-web/scripts/geodata-dev.mjs build
+
+  geodata:init:
+    desc: Install the DuckDB extensions configured in geodata-serve.local.json.
+    cmds:
+      - node apps/geodata-serve-web/scripts/geodata-dev.mjs init
+
+  geodata:dev:
+    desc: Start geodata-serve and its local web test harness.
+    cmds:
+      - node apps/geodata-serve-web/scripts/geodata-dev.mjs dev
+
+  geodata:stop:
+    desc: Stop the configured geodata-serve process through its public shutdown endpoint.
+    cmds:
+      - node apps/geodata-serve-web/scripts/geodata-dev.mjs stop
+
+  geodata:test-go:
+    desc: Run geodata-serve Go tests and vet.
+    dir: services/geodata-serve
+    cmds:
+      - go test ./...
+      - go vet ./...
+
+  geodata:test-web:
+    desc: Run geodata-serve-web tests.
+    dir: apps/geodata-serve-web
+    cmds:
+      - node --test
+
+  geodata:test:
+    desc: Run both the service and web test suites.
+    cmds:
+      - task: geodata:test-go
+      - task: geodata:test-web

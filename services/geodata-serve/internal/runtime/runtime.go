@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,10 @@ var (
 	ErrInvalidCommand = contract.ErrInvalidCommand
 	ErrBackupFailed   = contract.ErrBackupFailed
 	ErrResultEncoding = contract.ErrResultEncoding
+
+	errorMessageURLCredentials = regexp.MustCompile(`(://[^/\s:@]+:)[^@/\s]+@`)
+	errorMessageAssignment     = regexp.MustCompile(`(?i)\b(access[_-]?key|api[_-]?key|authorization|password|passwd|secret|token)\s*=\s*[^\s,&;]+`)
+	errorMessageBearer         = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
 )
 
 type Runtime = contract.Runtime
@@ -839,5 +844,53 @@ func safeErrorMessage(err error) string {
 	if errors.Is(err, ErrResultEncoding) {
 		return "result encoding failed"
 	}
-	return "DuckDB request failed"
+	return duckDBErrorSummary(err.Error())
+}
+
+func duckDBErrorSummary(message string) string {
+	var parts []string
+	for _, line := range strings.Split(message, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "LINE ") || strings.HasPrefix(line, "^") || isSQLContextLine(line) {
+			break
+		}
+		parts = append(parts, line)
+	}
+
+	summary := redactErrorSecrets(strings.Join(parts, " "))
+	if summary == "" {
+		return "DuckDB request failed"
+	}
+	return truncateErrorSummary(summary)
+}
+
+func isSQLContextLine(line string) bool {
+	upper := strings.ToUpper(line)
+	for _, prefix := range []string{"SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE ", "ALTER ", "DROP ", "COPY ", "WITH ", "FROM ", "SET ", "BEGIN", "COMMIT", "ROLLBACK"} {
+		if strings.HasPrefix(upper, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactErrorSecrets(message string) string {
+	message = errorMessageURLCredentials.ReplaceAllString(message, "${1}[REDACTED]@")
+	message = errorMessageAssignment.ReplaceAllStringFunc(message, func(match string) string {
+		key, _, _ := strings.Cut(match, "=")
+		return strings.TrimSpace(key) + "=[REDACTED]"
+	})
+	return errorMessageBearer.ReplaceAllString(message, "Bearer [REDACTED]")
+}
+
+func truncateErrorSummary(message string) string {
+	const maxRunes = 512
+	runes := []rune(message)
+	if len(runes) <= maxRunes {
+		return message
+	}
+	return string(runes[:maxRunes-1]) + "…"
 }

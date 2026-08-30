@@ -1,0 +1,7 @@
+# local dev artifacts (smoke runs, preview state)
+.smoke/
+node_modules/
+
+# geodata-serve runtime state copied here for local experiments
+runtime/
+server.json
