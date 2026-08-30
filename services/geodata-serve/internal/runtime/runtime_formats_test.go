@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"services/geodata-serve/internal/bootstrap"
 )
 
 func TestRuntimeReadsGeoParquetAndShapefileFixtures(t *testing.T) {
@@ -20,6 +22,15 @@ func TestRuntimeReadsGeoParquetAndShapefileFixtures(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "points.geojson"), fixture, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	restoreWorkingDir, err := bootstrap.EnterWorkingDirectory(root)
+	if err != nil {
+		t.Fatalf("EnterWorkingDirectory() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := restoreWorkingDir(); err != nil {
+			t.Errorf("restore process working directory: %v", err)
+		}
+	})
 	rt, err := New(context.Background(), Config{
 		DatabasePath: filepath.Join(root, "data.duckdb"),
 		RuntimeDir:   filepath.Join(root, "runtime"),
@@ -70,6 +81,15 @@ func TestRuntimeRunsWuhanUniversityRoadsImportAndAnalysisScenario(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(root, "wuhan_university_roads.geojson"), fixture, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	restoreWorkingDir, err := bootstrap.EnterWorkingDirectory(root)
+	if err != nil {
+		t.Fatalf("EnterWorkingDirectory() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := restoreWorkingDir(); err != nil {
+			t.Errorf("restore process working directory: %v", err)
+		}
+	})
 	rt, err := New(context.Background(), Config{
 		DatabasePath: filepath.Join(root, "data.duckdb"),
 		RuntimeDir:   filepath.Join(root, "runtime"),

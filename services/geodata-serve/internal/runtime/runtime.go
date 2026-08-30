@@ -3,11 +3,9 @@ package runtime
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,9 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/duckdb/duckdb-go/v2"
+	"services/geodata-serve/internal/backup"
+	"services/geodata-serve/internal/bootstrap"
 	"services/geodata-serve/internal/contract"
-	"services/geodata-serve/internal/duckdbutil"
+	"services/geodata-serve/internal/duckdbconn"
 )
 
 const (
@@ -40,10 +39,16 @@ const (
 )
 
 type Config struct {
+	// Paths is the canonical service configuration produced by bootstrap.
+	Paths bootstrap.Paths
+	// The individual fields remain accepted for package compatibility with
+	// existing callers; serve passes Paths so runtime layout cannot diverge.
 	DatabasePath string
 	RuntimeDir   string
 	BackupDir    string
 	WorkingDir   string
+	// ExtensionDir and TempDir are legacy test/bootstrap overrides. They are
+	// ignored when Paths is set and are not used by the CLI.
 	ExtensionDir string
 	TempDir      string
 	Logger       *slog.Logger
@@ -63,14 +68,11 @@ var (
 type Runtime = contract.Runtime
 
 type RuntimeModule struct {
-	db                 *sql.DB
-	connector          *duckdb.Connector
-	backupDir          string
-	runtimeDir         string
-	extensionDir       string
-	spatialVersion     string
-	previousWorkingDir string
-	logger             *slog.Logger
+	db             *sql.DB
+	dbOwner        *duckdbconn.Handle
+	spatialVersion string
+	logger         *slog.Logger
+	backupStore    *backup.Store
 
 	shutdownDone  chan struct{}
 	readSlots     chan struct{}
@@ -114,102 +116,58 @@ func New(ctx context.Context, config Config) (*RuntimeModule, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if config.DatabasePath == "" || config.RuntimeDir == "" || config.BackupDir == "" {
-		return nil, errors.New("database, runtime, and backup paths are required")
-	}
-	databasePath, err := absolutePath(config.DatabasePath)
+	paths, extensionDir, tempDir, err := canonicalPaths(config)
 	if err != nil {
-		return nil, fmt.Errorf("database path: %w", err)
+		return nil, err
 	}
-	runtimeDir, err := absolutePath(config.RuntimeDir)
+	if err := paths.EnsureDirectories(); err != nil {
+		return nil, err
+	}
+	if config.ExtensionDir != "" && config.Paths.RuntimeDir == "" {
+		if err := os.MkdirAll(extensionDir, 0o700); err != nil {
+			return nil, fmt.Errorf("create extension directory: %w", err)
+		}
+	}
+	owner, err := duckdbconn.Open(ctx, duckdbconn.Config{
+		DatabasePath:   paths.Database,
+		ExtensionDir:   extensionDir,
+		TempDir:        tempDir,
+		WorkingDir:     paths.WorkingDir,
+		MaxOpenConns:   3,
+		LoadExtensions: true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("runtime path: %w", err)
+		return nil, err
 	}
-	backupDir, err := absolutePath(config.BackupDir)
-	if err != nil {
-		return nil, fmt.Errorf("backup path: %w", err)
-	}
-	if config.ExtensionDir == "" {
-		config.ExtensionDir = filepath.Join(runtimeDir, "extensions")
-	} else if config.ExtensionDir, err = absolutePath(config.ExtensionDir); err != nil {
-		return nil, fmt.Errorf("extension path: %w", err)
-	}
-	if config.TempDir == "" {
-		config.TempDir = filepath.Join(runtimeDir, "duckdb-tmp")
-	} else if config.TempDir, err = absolutePath(config.TempDir); err != nil {
-		return nil, fmt.Errorf("temp path: %w", err)
-	}
-	if config.WorkingDir != "" {
-		if config.WorkingDir, err = absolutePath(config.WorkingDir); err != nil {
-			return nil, fmt.Errorf("working path: %w", err)
-		}
-		info, statErr := os.Stat(config.WorkingDir)
-		if statErr != nil {
-			return nil, fmt.Errorf("working path: %w", statErr)
-		}
-		if !info.IsDir() {
-			return nil, errors.New("working path is not a directory")
-		}
-	}
-	for _, directory := range []string{runtimeDir, backupDir, config.ExtensionDir, config.TempDir, filepath.Dir(databasePath)} {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
-			return nil, fmt.Errorf("create service directory: %w", err)
-		}
-	}
-	previousWorkingDir := ""
-	if config.WorkingDir != "" {
-		previousWorkingDir, err = os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("get current working directory: %w", err)
-		}
-		if err := os.Chdir(config.WorkingDir); err != nil {
-			return nil, fmt.Errorf("set working directory: %w", err)
-		}
-	}
-	restoreWorkingDir := func() error {
-		if previousWorkingDir != "" {
-			return os.Chdir(previousWorkingDir)
-		}
-		return nil
-	}
-
-	values := url.Values{
-		"extension_directory": []string{config.ExtensionDir},
-		"temp_directory":      []string{config.TempDir},
-	}
-	dsn := databasePath + "?" + values.Encode()
-	connector, err := duckdb.NewConnector(dsn, extensionLoader(config.WorkingDir))
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("open DuckDB connector: %w", err), restoreWorkingDir())
-	}
-	db := sql.OpenDB(connector)
-	db.SetMaxOpenConns(3)
-	db.SetMaxIdleConns(3)
-	if err := db.PingContext(ctx); err != nil {
-		return nil, errors.Join(fmt.Errorf("open DuckDB database: %w", err), db.Close(), connector.Close(), restoreWorkingDir())
-	}
+	db := owner.DB
 	spatialVersion, err := loadedExtensionVersion(ctx, db, "spatial")
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("read spatial extension version: %w", err), db.Close(), connector.Close(), restoreWorkingDir())
+		return nil, errors.Join(fmt.Errorf("read spatial extension version: %w", err), owner.Close())
+	}
+	backupStore, err := backup.NewStore(backup.Config{
+		BackupDir:    paths.BackupDir,
+		ExtensionDir: extensionDir,
+		TempDir:      tempDir,
+		WorkingDir:   paths.WorkingDir,
+	})
+	if err != nil {
+		return nil, errors.Join(err, owner.Close())
 	}
 
 	r := &RuntimeModule{
-		db:                 db,
-		connector:          connector,
-		backupDir:          backupDir,
-		runtimeDir:         runtimeDir,
-		extensionDir:       config.ExtensionDir,
-		spatialVersion:     spatialVersion,
-		previousWorkingDir: previousWorkingDir,
-		logger:             config.Logger,
-		shutdownDone:       make(chan struct{}),
-		readSlots:          make(chan struct{}, 2),
-		writeWake:          make(chan struct{}, 1),
-		workerDone:         make(chan struct{}),
-		activeCancels:      make(map[RequestID]context.CancelFunc),
-		states:             make(map[RequestID]RequestStatus),
-		requestsDone:       make(chan struct{}),
-		closeDone:          make(chan struct{}),
+		db:             db,
+		dbOwner:        owner,
+		spatialVersion: spatialVersion,
+		backupStore:    backupStore,
+		logger:         config.Logger,
+		shutdownDone:   make(chan struct{}),
+		readSlots:      make(chan struct{}, 2),
+		writeWake:      make(chan struct{}, 1),
+		workerDone:     make(chan struct{}),
+		activeCancels:  make(map[RequestID]context.CancelFunc),
+		states:         make(map[RequestID]RequestStatus),
+		requestsDone:   make(chan struct{}),
+		closeDone:      make(chan struct{}),
 	}
 	if r.logger == nil {
 		r.logger = slog.Default()
@@ -230,30 +188,77 @@ func loadedExtensionVersion(ctx context.Context, db *sql.DB, extension string) (
 	return version, nil
 }
 
+func canonicalPaths(config Config) (bootstrap.Paths, string, string, error) {
+	if config.Paths.Database != "" {
+		paths := config.Paths
+		if paths.RuntimeLayout.RuntimeDir == "" {
+			layout, err := bootstrap.ResolveRuntimeLayout(paths.RuntimeDir)
+			if err != nil {
+				return bootstrap.Paths{}, "", "", err
+			}
+			paths.RuntimeLayout = layout
+		}
+		if paths.BackupDir == "" {
+			return bootstrap.Paths{}, "", "", errors.New("backup path is required")
+		}
+		return paths, paths.ExtensionsDir(), paths.DuckDBTempDir(), nil
+	}
+	if config.DatabasePath == "" || config.RuntimeDir == "" || config.BackupDir == "" {
+		return bootstrap.Paths{}, "", "", errors.New("database, runtime, and backup paths are required")
+	}
+	databasePath, err := absolutePath(config.DatabasePath)
+	if err != nil {
+		return bootstrap.Paths{}, "", "", fmt.Errorf("database path: %w", err)
+	}
+	runtimeDir, err := absolutePath(config.RuntimeDir)
+	if err != nil {
+		return bootstrap.Paths{}, "", "", fmt.Errorf("runtime path: %w", err)
+	}
+	backupDir, err := absolutePath(config.BackupDir)
+	if err != nil {
+		return bootstrap.Paths{}, "", "", fmt.Errorf("backup path: %w", err)
+	}
+	workingDir := ""
+	if config.WorkingDir != "" {
+		workingDir, err = absolutePath(config.WorkingDir)
+		if err != nil {
+			return bootstrap.Paths{}, "", "", fmt.Errorf("working path: %w", err)
+		}
+		info, statErr := os.Stat(workingDir)
+		if statErr != nil {
+			return bootstrap.Paths{}, "", "", fmt.Errorf("working path: %w", statErr)
+		}
+		if !info.IsDir() {
+			return bootstrap.Paths{}, "", "", errors.New("working path is not a directory")
+		}
+	}
+	layout, err := bootstrap.ResolveRuntimeLayout(runtimeDir)
+	if err != nil {
+		return bootstrap.Paths{}, "", "", err
+	}
+	extensionDir := layout.ExtensionsDir
+	if config.ExtensionDir != "" {
+		extensionDir, err = absolutePath(config.ExtensionDir)
+		if err != nil {
+			return bootstrap.Paths{}, "", "", fmt.Errorf("extension path: %w", err)
+		}
+	}
+	tempDir := layout.DuckDBTempDir
+	if config.TempDir != "" {
+		tempDir, err = absolutePath(config.TempDir)
+		if err != nil {
+			return bootstrap.Paths{}, "", "", fmt.Errorf("temp path: %w", err)
+		}
+	}
+	return bootstrap.Paths{Database: databasePath, RuntimeDir: runtimeDir, BackupDir: backupDir, WorkingDir: workingDir, RuntimeLayout: layout}, extensionDir, tempDir, nil
+}
+
 func absolutePath(path string) (string, error) {
 	abs, err := filepath.Abs(filepath.Clean(path))
 	if err != nil {
 		return "", err
 	}
 	return filepath.Clean(abs), nil
-}
-
-func extensionLoader(workingDir string) func(driver.ExecerContext) error {
-	return func(execer driver.ExecerContext) error {
-		if err := duckdbutil.LoadExtensions(execer); err != nil {
-			return err
-		}
-		if workingDir == "" {
-			return nil
-		}
-		if _, err := execer.ExecContext(context.Background(), "SET file_search_path = "+duckdbutil.SQLLiteral(workingDir), nil); err != nil {
-			return fmt.Errorf("set file search path: %w", err)
-		}
-		if _, err := execer.ExecContext(context.Background(), "SET home_directory = "+duckdbutil.SQLLiteral(workingDir), nil); err != nil {
-			return fmt.Errorf("set home directory: %w", err)
-		}
-		return nil
-	}
 }
 
 func (r *RuntimeModule) Execute(ctx context.Context, command Command, sink EventSink) error {
@@ -761,15 +766,9 @@ func (r *RuntimeModule) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
 		go func() {
 			<-r.requestsDone
-			dbErr := r.db.Close()
-			connectorErr := r.connector.Close()
-			if r.previousWorkingDir != "" {
-				if err := os.Chdir(r.previousWorkingDir); err != nil {
-					connectorErr = errors.Join(connectorErr, fmt.Errorf("restore working directory: %w", err))
-				}
-			}
+			dbErr := r.dbOwner.Close()
 			r.closeMu.Lock()
-			r.closeErr = errors.Join(dbErr, connectorErr)
+			r.closeErr = dbErr
 			r.closeMu.Unlock()
 			close(r.closeDone)
 		}()

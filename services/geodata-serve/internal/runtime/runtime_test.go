@@ -14,7 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"services/geodata-serve/internal/duckdbutil"
+	"services/geodata-serve/internal/backup"
+	"services/geodata-serve/internal/bootstrap"
 )
 
 func newTestRuntime(t *testing.T) *RuntimeModule {
@@ -292,6 +293,45 @@ func TestRuntimeUsesWorkingDirectoryForRelativeFiles(t *testing.T) {
 	}
 }
 
+func TestRuntimeDoesNotChangeProcessWorkingDirectory(t *testing.T) {
+	extDir := os.Getenv("GEODATA_SERVE_EXTENSION_DIR")
+	if extDir == "" {
+		t.Skip("set GEODATA_SERVE_EXTENSION_DIR to a directory containing DuckDB spatial and httpfs extensions")
+	}
+	root := t.TempDir()
+	before, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := New(context.Background(), Config{
+		DatabasePath: filepath.Join(root, "data.duckdb"),
+		RuntimeDir:   filepath.Join(root, "runtime"),
+		BackupDir:    filepath.Join(root, "backups"),
+		WorkingDir:   root,
+		ExtensionDir: extDir,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	afterNew, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterNew != before {
+		t.Fatalf("New() changed process working directory from %q to %q", before, afterNew)
+	}
+	if err := rt.Close(context.Background()); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	afterClose, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterClose != before {
+		t.Fatalf("Close() changed process working directory from %q to %q", before, afterClose)
+	}
+}
+
 func TestRuntimeReadsGeoJSONFixtureThroughWorkingDirectory(t *testing.T) {
 	extDir := os.Getenv("GEODATA_SERVE_EXTENSION_DIR")
 	if extDir == "" {
@@ -309,6 +349,14 @@ func TestRuntimeReadsGeoJSONFixtureThroughWorkingDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "points.geojson"), fixture, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	before, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoreWorkingDir, err := bootstrap.EnterWorkingDirectory(root)
+	if err != nil {
+		t.Fatalf("EnterWorkingDirectory() error = %v", err)
+	}
 	rt, err := New(context.Background(), Config{
 		DatabasePath: filepath.Join(root, "data.duckdb"),
 		RuntimeDir:   filepath.Join(root, "runtime"),
@@ -317,9 +365,23 @@ func TestRuntimeReadsGeoJSONFixtureThroughWorkingDirectory(t *testing.T) {
 		ExtensionDir: extDir,
 	})
 	if err != nil {
+		_ = restoreWorkingDir()
 		t.Fatalf("New() error = %v", err)
 	}
-	closeTestRuntime(t, rt)
+	t.Cleanup(func() {
+		if err := rt.Close(context.Background()); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+		if got, err := os.Getwd(); err != nil || got != root {
+			t.Errorf("service CWD after Runtime close = %q, %v; want %q", got, err, root)
+		}
+		if err := restoreWorkingDir(); err != nil {
+			t.Errorf("restore process working directory: %v", err)
+		}
+		if got, err := os.Getwd(); err != nil || got != before {
+			t.Errorf("process CWD after lifecycle = %q, %v; want %q", got, err, before)
+		}
+	})
 	events, err := collectEvents(rt, Command{ID: "req_geojson", Mode: ModeRead, SQL: "SELECT count(*)::INTEGER FROM ST_Read('points.geojson')"})
 	if err != nil {
 		t.Fatalf("GeoJSON Execute() error = %v", err)
@@ -440,7 +502,7 @@ func TestRuntimeCreatesVerifiedBackupBeforeWrite(t *testing.T) {
 	if len(entries) != 1 || !entries[0].IsDir() {
 		t.Fatalf("backup entries = %#v, want one directory", entries)
 	}
-	if _, err := os.Stat(filepath.Join(root, "backups", entries[0].Name(), duckdbutil.VerifiedBackupMarker)); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "backups", entries[0].Name(), backup.VerifiedMarker)); err != nil {
 		t.Fatalf("verified backup marker error = %v", err)
 	}
 }
@@ -479,7 +541,7 @@ func TestRuntimeRetainsOnlyFiveVerifiedBackups(t *testing.T) {
 		if !entry.IsDir() {
 			t.Fatalf("backup entry %q is not a directory", entry.Name())
 		}
-		if _, err := os.Stat(filepath.Join(root, "backups", entry.Name(), duckdbutil.VerifiedBackupMarker)); err != nil {
+		if _, err := os.Stat(filepath.Join(root, "backups", entry.Name(), backup.VerifiedMarker)); err != nil {
 			t.Fatalf("backup %q marker error = %v", entry.Name(), err)
 		}
 	}

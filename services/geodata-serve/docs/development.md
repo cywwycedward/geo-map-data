@@ -73,9 +73,21 @@ require github.com/duckdb/duckdb-go/v2 v2.5.6
 ### `internal/runtime`
 
 - 实现设计文档中的深 Runtime Module；
-- 拥有 DuckDB connector、连接池、读写调度、备份、状态和取消；
+- 拥有连接池、读写调度、状态和取消，并拥有在线 DuckDB pool 与 backup store；
 - 对 HTTP adapter 暴露最小 interface；
 - 不依赖 `net/http`。
+
+### `internal/duckdbconn`
+
+- 从 canonical 路径配置 DSN 和连接池；
+- 在每个新连接上加载 `spatial`、`httpfs`，并设置 `file_search_path` 与 `home_directory`；
+- 作为具体 owner 关闭连接池和 connector，不暴露给 HTTP adapter。
+
+### `internal/backup`
+
+- 创建 staging 目录并执行 `EXPORT DATABASE`；
+- 将导出导入全新的临时数据库后再发布验证 marker；
+- 重验恢复工件并执行五份有效备份保留和安全清理。
 
 如果 scheduler、registry、backup 的代码可以保持清楚，先放在同一 package；只有出现独立不变量和真实替代 implementation 时再拆分。
 
@@ -89,9 +101,10 @@ require github.com/duckdb/duckdb-go/v2 v2.5.6
 
 ### `internal/bootstrap`
 
-- 路径验证；
+- 路径验证和 canonical `RuntimeLayout`；
 - 扩展目录、临时目录和状态文件；
 - `init` 与 `serve` 启动准备；
+- `serve` 启动边界为固定 Spatial/GDAL 的相对路径建立 process CWD，并在生命周期结束时恢复；
 - 原子写入、匹配删除 `server.json`。
 
 ### `internal/restore`

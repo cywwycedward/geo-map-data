@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"services/geodata-serve/internal/duckdbutil"
+	"services/geodata-serve/internal/backup"
 	"services/geodata-serve/internal/runtime"
 )
 
@@ -63,17 +63,17 @@ func TestRestoreRejectsUnverifiedBackupWithoutChangingCurrentDatabase(t *testing
 
 func TestRestoreRejectsInvalidVerificationMarker(t *testing.T) {
 	root := t.TempDir()
-	backup := filepath.Join(root, "backup")
-	if err := os.MkdirAll(backup, 0o700); err != nil {
+	backupPath := filepath.Join(root, "backup")
+	if err := os.MkdirAll(backupPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(backup, duckdbutil.VerifiedBackupMarker), []byte("not verified\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(backupPath, backup.VerifiedMarker), []byte("not verified\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	err := Restore(context.Background(), Options{
 		DatabasePath: filepath.Join(root, "current.duckdb"),
 		RuntimeDir:   filepath.Join(root, "runtime"),
-		BackupPath:   backup,
+		BackupPath:   backupPath,
 	})
 	if err == nil {
 		t.Fatal("Restore() error = nil, want invalid marker error")
