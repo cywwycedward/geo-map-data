@@ -452,6 +452,13 @@ func TestExecuteStreamsSQLFailureFromRealRuntime(t *testing.T) {
 	if terminal["type"] != "error" || terminal["code"] != "sql_failed" || terminal["state"] != "failed" {
 		t.Fatalf("terminal event = %#v", terminal)
 	}
+	message, ok := terminal["message"].(string)
+	if !ok || !strings.Contains(message, "Catalog Error") || !strings.Contains(message, "missing_table") {
+		t.Fatalf("terminal message = %#v, want a DuckDB error summary", terminal["message"])
+	}
+	if strings.Contains(message, "LINE 1") || strings.Contains(message, "SELECT *") {
+		t.Fatalf("terminal message leaked SQL context: %q", message)
+	}
 }
 
 func TestExecuteStreamsJSONPrecisionFailureFromRealRuntime(t *testing.T) {

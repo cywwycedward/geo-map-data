@@ -21,3 +21,11 @@
 **/.env
 **/.env.*
 !**/.env.example
+
+# Locally compiled service binaries and manual integration-test state are
+# reproducible. The runtime state includes the server discovery token.
+services/geodata-serve/*.exe
+tests/geodata-serve-test/
+/.local/
+/node_modules/
+/archive-*/

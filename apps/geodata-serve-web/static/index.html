@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>geodata-serve-web · 测试台</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot" id="conn-dot"></span>
+        <h1>geodata-serve-web</h1>
+        <span class="subtitle">本地 DuckDB 数据服务测试台</span>
+        <span id="conn-label" class="connection-label">正在连接…</span>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="overview">总览</button>
+        <button class="tab" data-tab="execute">执行 SQL</button>
+        <button class="tab" data-tab="concurrency">并发</button>
+        <button class="tab" data-tab="backups">备份与恢复</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ============ Overview ============ -->
+      <section id="tab-overview" class="panel active">
+        <div class="grid two">
+          <div class="card">
+            <h2>服务连接</h2>
+            <div id="connection-state" class="connection-state pending" role="status" aria-live="polite">
+              <strong id="connection-title">正在读取服务配置…</strong>
+              <span id="connection-detail" class="muted">代理会从 runtime-dir 中发现正在运行的服务。</span>
+            </div>
+            <div class="row">
+              <button id="btn-config">刷新配置</button>
+              <button id="btn-health">检查健康</button>
+            </div>
+            <details>
+              <summary>查看完整服务配置（不包含 token）</summary>
+              <pre id="cfg-json" class="mono muted">尚未加载。</pre>
+            </details>
+            <div id="health-result" class="mono"></div>
+          </div>
+
+          <div class="card">
+            <h2>鉴权验证</h2>
+            <p class="muted">
+              除 <code>GET /health</code> 外均需 <code>Bearer token</code>。以下按钮通过代理层省略 token，验证服务返回
+              <code>401 unauthorized</code>。
+            </p>
+            <div class="row">
+              <button id="btn-auth-health">无 token 访问 /health（期望 200）</button>
+              <button id="btn-auth-401">无 token 执行 SQL（期望 401）</button>
+            </div>
+            <div id="auth-result" class="mono"></div>
+          </div>
+        </div>
+
+        <div class="card guide-card">
+          <div class="card-heading">
+            <div>
+              <h2>推荐测试路径</h2>
+              <p class="muted">按顺序覆盖基础流、写前备份、失败分支、超时和调度。点击任一步会准备相应 SQL，并在执行后给出判定。</p>
+            </div>
+          </div>
+          <div class="guide-grid">
+            <button class="guide-step" data-scenario="basic-read"><span>1</span><strong>基础读取</strong><small>期望 finished</small></button>
+            <button class="guide-step" data-scenario="write-backup"><span>2</span><strong>写前备份</strong><small>期望 backing_up → finished</small></button>
+            <button class="guide-step" data-scenario="sql-error"><span>3</span><strong>SQL 失败</strong><small>期望 sql_failed</small></button>
+            <button class="guide-step" data-scenario="timeout"><span>4</span><strong>请求超时</strong><small>期望 deadline_exceeded</small></button>
+            <button class="guide-step" data-scenario="auth-401"><span>5</span><strong>鉴权拒绝</strong><small>期望 HTTP 401</small></button>
+            <button class="guide-step" data-tab-target="concurrency"><span>6</span><strong>并发调度</strong><small>观察 2 读 + 1 写</small></button>
+          </div>
+        </div>
+
+        <div class="card danger">
+          <h2>服务关闭</h2>
+          <p class="muted">
+            <code>POST /shutdown</code> 会让 geodata-serve 停止接收新请求、取消排队与运行中的请求并退出进程。
+            关闭后需要重新运行 <code>geodata-serve serve …</code> 才能继续测试。
+          </p>
+          <button id="btn-shutdown" class="danger-btn">关闭服务（慎用）</button>
+          <div id="shutdown-result" class="mono"></div>
+        </div>
+      </section>
+
+      <!-- ============ Execute ============ -->
+      <section id="tab-execute" class="panel">
+        <div class="card scenario-card">
+          <div class="card-heading">
+            <div>
+              <h2>快速测试场景</h2>
+              <p class="muted">选择场景后可直接运行；仍可编辑 SQL 进行自由验证。</p>
+            </div>
+            <span class="meta muted">快捷键：Ctrl / ⌘ + Enter 运行</span>
+          </div>
+          <div class="scenario-grid">
+            <button class="scenario-button active" data-scenario="basic-read">基础读取</button>
+            <button class="scenario-button" data-scenario="stream-read">流式结果</button>
+            <button class="scenario-button" data-scenario="write-backup">写前备份</button>
+            <button class="scenario-button" data-scenario="sql-error">SQL 失败</button>
+            <button class="scenario-button" data-scenario="timeout">超时</button>
+            <button class="scenario-button" data-scenario="auth-401">401 鉴权</button>
+          </div>
+          <div id="scenario-hint" class="scenario-hint" role="status" aria-live="polite"></div>
+        </div>
+
+        <div class="card">
+          <h2>执行原始 SQL（NDJSON 流式结果）</h2>
+          <div class="row wrap">
+            <label>模式
+              <select id="mode">
+                <option value="read">read</option>
+                <option value="write">write</option>
+              </select>
+            </label>
+            <label>预设
+              <select id="preset"><option value="">— 选择预设 SQL —</option></select>
+            </label>
+            <label>超时（秒，可选）
+              <input id="timeout" type="number" min="1" step="1" placeholder="不设置" />
+            </label>
+            <label class="check"><input id="skip-auth" type="checkbox" /> 省略 token（测试 401）</label>
+          </div>
+          <textarea id="sql" spellcheck="false" placeholder="输入 DuckDB SQL，例如：SELECT 1 AS one"></textarea>
+          <div class="row">
+            <button id="btn-run" class="primary">运行</button>
+            <button id="btn-cancel" disabled>取消当前请求</button>
+            <span id="exec-meta" class="meta muted"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>结果</h2>
+          <div id="exec-status" class="status-strip"></div>
+          <div id="exec-schema" class="mono muted"></div>
+          <div class="table-wrap"><table id="exec-table"><thead></thead><tbody></tbody></table></div>
+          <div id="exec-summary" class="mono"></div>
+          <div id="exec-verdict" class="verdict muted" role="status" aria-live="polite">选择一个快速测试场景后，这里会显示自动判定。</div>
+          <details>
+            <summary>原始 NDJSON 行</summary>
+            <pre id="exec-raw" class="mono"></pre>
+          </details>
+        </div>
+      </section>
+
+      <!-- ============ Concurrency ============ -->
+      <section id="tab-concurrency" class="panel">
+        <div class="card">
+          <h2>并发调度（2 读 + 1 写 FIFO）</h2>
+          <p class="muted">
+            同时发起多个请求，观察读槽位上限为 2、写串行、且一个写可与两个读并行。SQL 建议使用足够慢的查询以观察排队。
+          </p>
+          <div class="row wrap">
+            <label>读请求数 <input id="conc-reads" type="number" value="2" min="0" max="10" /></label>
+            <label>写请求数 <input id="conc-writes" type="number" value="1" min="0" max="10" /></label>
+          </div>
+          <label>每个读请求的 SQL
+            <textarea id="conc-sql" spellcheck="false">SELECT count(*) FROM range(0, 300000000) t(i)</textarea>
+          </label>
+          <div class="row">
+            <button id="btn-conc" class="primary">运行并发测试</button>
+          </div>
+          <div id="conc-summary" class="mono"></div>
+          <div id="conc-timeline"></div>
+        </div>
+      </section>
+
+      <!-- ============ Backups ============ -->
+      <section id="tab-backups" class="panel">
+        <div class="card">
+          <h2>写前备份</h2>
+          <p class="muted">
+            每个写请求先执行完整 DuckDB 备份，保留最近 5 份。带 <span class="badge ok">verified</span> 标记的目录是完整备份。
+            此列表来自代理层的 <code>--backup-dir</code>。
+          </p>
+          <div class="row">
+            <button id="btn-backups">刷新备份列表</button>
+          </div>
+          <div id="backups-list" class="mono"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>测试目标：geodata-serve v1（Go + DuckDB）。界面只做展示与调用，不改动服务实现。</span>
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

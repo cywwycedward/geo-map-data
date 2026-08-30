@@ -4,6 +4,8 @@
 
 当前目录包含 geodata-serve v1 的 Go module、Runtime Module、HTTP adapter、启动准备和离线恢复实现。
 
+若要连同本仓库的 HTTP 测试台一键启动服务，请从仓库根目录按 [`apps/geodata-serve-web` 的一键启动说明](../../apps/geodata-serve-web/README.md#一键启动推荐) 配置后运行 `npm run dev`。
+
 ## 文档
 
 - [设计实现](docs/design.md)：目标、Module、seam、运行流程、状态、备份、生命周期和实现阶段。

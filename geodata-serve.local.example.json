@@ -1,0 +1,7 @@
+{
+  "database": "D:\\geo\\data.duckdb",
+  "runtimeDir": "D:\\geo\\runtime",
+  "backupDir": "D:\\geo\\backups",
+  "workingDir": "D:\\geo\\project",
+  "webPort": 8787
+}

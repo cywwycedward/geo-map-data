@@ -1,0 +1,16 @@
+{
+  "name": "geo-map-data-dev-tools",
+  "private": true,
+  "scripts": {
+    "build": "task geodata:build",
+    "dev": "task geodata:dev",
+    "init": "task geodata:init",
+    "stop": "task geodata:stop",
+    "test": "task geodata:test",
+    "test:go": "task geodata:test-go",
+    "test:web": "task geodata:test-web"
+  },
+  "devDependencies": {
+    "@go-task/cli": "3.53.1"
+  }
+}

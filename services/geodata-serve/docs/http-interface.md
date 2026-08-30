@@ -246,7 +246,7 @@ status → [status ...] → error
 | `deadline_exceeded` | `cancelled` | `timeout_seconds` 到期。 |
 | `internal_error` | `failed` | 流开始后的未分类内部错误。 |
 
-`message` 用于本地诊断，可以包含 DuckDB 的安全错误摘要，但不得包含 token、Go stack trace 或完整原始 SQL。
+`message` 用于本地诊断。DuckDB SQL 错误返回经过清理的原因摘要：保留错误类别、主因和 DuckDB 的建议行；去除 `LINE n:` 与插入符号形式的 SQL 上下文，脱敏常见 token、密码和 URL 凭据，并最多返回 512 个 Unicode 字符。它不得包含 token、Go stack trace 或完整原始 SQL。
 
 ### 4.4 值编码
 

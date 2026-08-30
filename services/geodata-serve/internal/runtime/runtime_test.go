@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +54,32 @@ func collectEvents(rt Runtime, command Command) ([]Event, error) {
 		return nil
 	})
 	return events, err
+}
+
+func TestSafeErrorMessageKeepsDuckDBCauseWithoutSQLContext(t *testing.T) {
+	err := errors.New("Catalog Error: Table with name missing_table does not exist!\nDid you mean \"pg_tables\"?\n\nLINE 1: SELECT * FROM missing_table\n                      ^")
+
+	message := safeErrorMessage(err)
+	if message != "Catalog Error: Table with name missing_table does not exist! Did you mean \"pg_tables\"?" {
+		t.Fatalf("safeErrorMessage() = %q", message)
+	}
+	if strings.Contains(message, "SELECT *") || strings.Contains(message, "LINE 1") {
+		t.Fatalf("safeErrorMessage() leaked SQL context: %q", message)
+	}
+}
+
+func TestSafeErrorMessageRedactsCredentials(t *testing.T) {
+	err := errors.New("HTTP Error: GET https://reader:password@example.test/data.parquet?token=secret-token&region=cn")
+
+	message := safeErrorMessage(err)
+	if !strings.Contains(message, "HTTP Error") {
+		t.Fatalf("safeErrorMessage() = %q, want error cause", message)
+	}
+	for _, secret := range []string{"password", "secret-token"} {
+		if strings.Contains(message, secret) {
+			t.Fatalf("safeErrorMessage() leaked %q: %q", secret, message)
+		}
+	}
 }
 
 func TestRuntimePersistsDataAcrossReopen(t *testing.T) {
