@@ -4,6 +4,10 @@
 
 当前目录包含 geodata-serve v1 的 Go module、Runtime Module、HTTP adapter、启动准备和离线恢复实现。
 
+服务布局由 `internal/bootstrap` 的 canonical `RuntimeLayout` 计算；在线和验证用的
+DuckDB 连接由 `internal/duckdbconn` 创建并关闭；`internal/backup` 负责写前完整备份、
+验证工件、保留和恢复前重验。Runtime 不在连接或请求期间改变进程当前工作目录；serve 仅在启动边界为固定 Spatial/GDAL 的相对路径建立一次 CWD，并在退出时恢复。
+
 若要连同本仓库的 HTTP 测试台一键启动服务，请从仓库根目录按 [`apps/geodata-serve-web` 的一键启动说明](../../apps/geodata-serve-web/README.md#一键启动推荐) 配置后运行 `npm run dev`。
 
 ## 文档

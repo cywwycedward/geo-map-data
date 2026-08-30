@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -69,7 +68,7 @@ func runInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	absRuntimeDir, err := filepath.Abs(filepath.Clean(*runtimeDir))
+	layout, err := bootstrap.ResolveRuntimeLayout(*runtimeDir)
 	if err != nil {
 		return fmt.Errorf("runtime directory: %w", err)
 	}
@@ -79,12 +78,12 @@ func runInit(args []string) error {
 		"duckdb_version":  runtime.DuckDBVersion,
 		"spatial_version": extensions.SpatialVersion,
 		"platform":        goruntime.GOOS + "/" + goruntime.GOARCH,
-		"extension_dir":   filepath.Join(absRuntimeDir, "extensions"),
+		"extension_dir":   layout.ExtensionsDir,
 		"extensions":      []string{"spatial", "httpfs"},
 	})
 }
 
-func runServe(args []string) error {
+func runServe(args []string) (err error) {
 	flags := newFlagSet("serve")
 	database := flags.String("database", "", "persistent DuckDB database file")
 	runtimeDir := flags.String("runtime-dir", "", "service runtime directory")
@@ -100,6 +99,13 @@ func runServe(args []string) error {
 	if err := paths.EnsureDirectories(); err != nil {
 		return err
 	}
+	restoreWorkingDir, err := bootstrap.EnterWorkingDirectory(paths.WorkingDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, restoreWorkingDir())
+	}()
 	if err := removeStaleState(paths.ServerStateFile()); err != nil {
 		return err
 	}
@@ -108,13 +114,8 @@ func runServe(args []string) error {
 		"duckdb_version", runtime.DuckDBVersion,
 	)
 	rt, err := runtime.New(context.Background(), runtime.Config{
-		DatabasePath: paths.Database,
-		RuntimeDir:   paths.RuntimeDir,
-		BackupDir:    paths.BackupDir,
-		WorkingDir:   paths.WorkingDir,
-		ExtensionDir: paths.ExtensionsDir(),
-		TempDir:      paths.DuckDBTempDir(),
-		Logger:       logger,
+		Paths:  paths,
+		Logger: logger,
 	})
 	if err != nil {
 		return err

@@ -2,26 +2,11 @@ package duckdbutil
 
 import (
 	"bytes"
-	"context"
-	"database/sql/driver"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
-
-const VerifiedBackupMarker = ".geodata-serve-verified"
-
-func LoadExtensions(execer driver.ExecerContext) error {
-	if _, err := execer.ExecContext(context.Background(), "LOAD spatial", nil); err != nil {
-		return fmt.Errorf("load spatial: %w", err)
-	}
-	if _, err := execer.ExecContext(context.Background(), "LOAD httpfs", nil); err != nil {
-		return fmt.Errorf("load httpfs: %w", err)
-	}
-	return nil
-}
 
 func SQLLiteral(value string) string {
 	return "'" + strings.ReplaceAll(filepath.ToSlash(value), "'", "''") + "'"

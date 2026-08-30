@@ -2,14 +2,10 @@ package bootstrap
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
-	"path/filepath"
 
-	"github.com/duckdb/duckdb-go/v2"
+	"services/geodata-serve/internal/duckdbconn"
 )
 
 type ExtensionInfo struct {
@@ -20,30 +16,27 @@ func InstallExtensions(ctx context.Context, runtimeDir string) (info ExtensionIn
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runtimeDir, err = filepath.Abs(filepath.Clean(runtimeDir))
+	layout, err := ResolveRuntimeLayout(runtimeDir)
 	if err != nil {
+		return info, fmt.Errorf("resolve runtime layout: %w", err)
+	}
+	if err := layout.EnsureDirectories(); err != nil {
 		return info, err
 	}
-	extensionsDir := filepath.Join(runtimeDir, "extensions")
-	tempDir := filepath.Join(runtimeDir, "duckdb-tmp")
-	for _, directory := range []string{runtimeDir, extensionsDir, tempDir} {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
-			return info, fmt.Errorf("create extension directory: %w", err)
-		}
-	}
-	dsn := ":memory:?" + url.Values{
-		"extension_directory": []string{extensionsDir},
-		"temp_directory":      []string{tempDir},
-	}.Encode()
-	connector, err := duckdb.NewConnector(dsn, nil)
+	database, err := duckdbconn.Open(ctx, duckdbconn.Config{
+		DatabasePath:   ":memory:",
+		ExtensionDir:   layout.ExtensionsDir,
+		TempDir:        layout.DuckDBTempDir,
+		MaxOpenConns:   1,
+		LoadExtensions: false,
+	})
 	if err != nil {
 		return info, fmt.Errorf("open extension installer: %w", err)
 	}
-	db := sql.OpenDB(connector)
 	defer func() {
-		err = errors.Join(err, db.Close(), connector.Close())
+		err = errors.Join(err, database.Close())
 	}()
-	db.SetMaxOpenConns(1)
+	db := database.DB
 	if err := db.PingContext(ctx); err != nil {
 		return info, fmt.Errorf("open extension installer: %w", err)
 	}

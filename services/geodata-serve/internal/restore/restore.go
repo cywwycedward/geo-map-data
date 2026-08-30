@@ -3,20 +3,19 @@ package restore
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/duckdb/duckdb-go/v2"
+	"services/geodata-serve/internal/backup"
+	"services/geodata-serve/internal/bootstrap"
 	"services/geodata-serve/internal/duckdbutil"
 )
 
@@ -37,30 +36,17 @@ func Restore(ctx context.Context, options Options) (err error) {
 	if err != nil {
 		return fmt.Errorf("database path: %w", err)
 	}
-	runtimeDir, err := filepath.Abs(filepath.Clean(options.RuntimeDir))
+	layout, err := bootstrap.ResolveRuntimeLayout(options.RuntimeDir)
 	if err != nil {
-		return fmt.Errorf("runtime path: %w", err)
+		return err
 	}
 	backupPath, err := filepath.Abs(filepath.Clean(options.BackupPath))
 	if err != nil {
 		return fmt.Errorf("backup path: %w", err)
 	}
-	if info, err := os.Lstat(backupPath); err != nil {
-		return fmt.Errorf("backup path: %w", err)
-	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("backup path is not a directory")
-	}
-	markerPath := filepath.Join(backupPath, duckdbutil.VerifiedBackupMarker)
-	markerInfo, err := os.Lstat(markerPath)
+	artifact, err := backup.Validate(backupPath)
 	if err != nil {
-		return errors.New("backup path is not a verified geodata-serve backup")
-	}
-	if !markerInfo.Mode().IsRegular() || markerInfo.Mode()&os.ModeSymlink != 0 {
-		return errors.New("backup verification marker is invalid")
-	}
-	marker, err := os.ReadFile(markerPath)
-	if err != nil || string(marker) != "verified\n" {
-		return errors.New("backup verification marker is invalid")
+		return err
 	}
 	if info, err := os.Lstat(databasePath); err == nil && info.IsDir() {
 		return errors.New("database path is a directory")
@@ -69,14 +55,22 @@ func Restore(ctx context.Context, options Options) (err error) {
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("database path: %w", err)
 	}
-	if err := refuseRunningService(ctx, filepath.Join(runtimeDir, "server.json")); err != nil {
+	if err := refuseRunningService(ctx, layout.ServerStateFile); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(databasePath), 0o700); err != nil {
 		return fmt.Errorf("create database parent: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(runtimeDir, "duckdb-tmp"), 0o700); err != nil {
-		return fmt.Errorf("create runtime temp directory: %w", err)
+	if err := layout.EnsureDirectories(); err != nil {
+		return err
+	}
+	store, err := backup.NewStore(backup.Config{
+		BackupDir:    filepath.Dir(backupPath),
+		ExtensionDir: layout.ExtensionsDir,
+		TempDir:      layout.DuckDBTempDir,
+	})
+	if err != nil {
+		return err
 	}
 	suffix, err := randomSuffix()
 	if err != nil {
@@ -91,7 +85,7 @@ func Restore(ctx context.Context, options Options) (err error) {
 			err = errors.Join(err, fmt.Errorf("remove restore temporary database: %w", removeErr))
 		}
 	}()
-	if err := importToPath(ctx, tempPath, runtimeDir, backupPath); err != nil {
+	if err := store.Import(ctx, artifact, tempPath); err != nil {
 		return fmt.Errorf("import restore database: %w", err)
 	}
 
@@ -121,39 +115,6 @@ func Restore(ctx context.Context, options Options) (err error) {
 		return fmt.Errorf("replace database: %w", err)
 	}
 	return nil
-}
-
-func importToPath(ctx context.Context, databasePath, runtimeDir, backupPath string) error {
-	dsn := databasePath + "?" + url.Values{
-		"extension_directory": []string{filepath.Join(runtimeDir, "extensions")},
-		"temp_directory":      []string{filepath.Join(runtimeDir, "duckdb-tmp")},
-	}.Encode()
-	connector, err := duckdb.NewConnector(dsn, duckdbutil.LoadExtensions)
-	if err != nil {
-		return err
-	}
-	db := sql.OpenDB(connector)
-	db.SetMaxOpenConns(1)
-	if err := db.PingContext(ctx); err != nil {
-		return errors.Join(err, db.Close(), connector.Close())
-	}
-	emptySchema, err := duckdbutil.EmptyExportSchema(backupPath)
-	if err != nil {
-		closeErr := errors.Join(db.Close(), connector.Close())
-		return errors.Join(fmt.Errorf("inspect exported schema: %w", err), closeErr)
-	}
-	if !emptySchema {
-		if _, err := db.ExecContext(ctx, "IMPORT DATABASE "+duckdbutil.SQLLiteral(backupPath)); err != nil {
-			closeErr := errors.Join(db.Close(), connector.Close())
-			return errors.Join(err, closeErr)
-		}
-	}
-	var one int
-	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
-		closeErr := errors.Join(db.Close(), connector.Close())
-		return errors.Join(err, closeErr)
-	}
-	return errors.Join(db.Close(), connector.Close())
 }
 
 type serverState struct {
